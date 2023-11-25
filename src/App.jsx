@@ -50,12 +50,12 @@ const AuthContextProvider = ({ children }) => {
 
 const Login = () => {
   const handleLogin = async () => {
-    console.log(serverUrl);
     try {
       // Gets authentication url from backend server
       const {
         data: { url },
       } = await axios.get(`${serverUrl}/auth/url`);
+
       // Navigate to consent screen
       window.location.assign(url);
     } catch (err) {
@@ -85,7 +85,6 @@ const Callback = () => {
           const res = await axios.get(
             `${serverUrl}/auth/token${window.location.search}`
           );
-          console.log("response: ", res);
           checkLoginState();
           navigate("/");
         } catch (err) {
