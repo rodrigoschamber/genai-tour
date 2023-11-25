@@ -1,35 +1,188 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import {
+  RouterProvider,
+  createBrowserRouter,
+  useNavigate,
+} from "react-router-dom";
+import axios from "axios";
+import {
+  useEffect,
+  useRef,
+  useState,
+  createContext,
+  useContext,
+  useCallback,
+} from "react";
+import "./App.css";
 
-function App() {
-  const [count, setCount] = useState(0)
+// Ensures cookie is sent
+axios.defaults.withCredentials = true;
+
+const serverUrl = import.meta.env.VITE_SERVER_URL;
+console.log("sss", serverUrl);
+const AuthContext = createContext();
+
+const AuthContextProvider = ({ children }) => {
+  const [loggedIn, setLoggedIn] = useState(null);
+  const [user, setUser] = useState(null);
+
+  const checkLoginState = useCallback(async () => {
+    try {
+      const {
+        data: { loggedIn: logged_in, user },
+      } = await axios.get(`${serverUrl}/auth/logged_in`);
+      setLoggedIn(logged_in);
+      user && setUser(user);
+    } catch (err) {
+      console.error(err);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkLoginState();
+  }, [checkLoginState]);
+
+  return (
+    <AuthContext.Provider value={{ loggedIn, checkLoginState, user }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+const Dashboard = () => {
+  const { user, loggedIn, checkLoginState } = useContext(AuthContext);
+  const [posts, setPosts] = useState([]);
+  useEffect(() => {
+    (async () => {
+      if (!!loggedIn) {
+        try {
+          // Get posts from server
+          const {
+            data: { posts },
+          } = await axios.get(`${serverUrl}/user/posts`);
+          setPosts(posts);
+        } catch (err) {
+          console.error(err);
+        }
+      }
+    })();
+  }, [loggedIn]);
+
+  const handleLogout = async () => {
+    try {
+      await axios.post(`${serverUrl}/auth/logout`);
+      // Check login state again
+      checkLoginState();
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   return (
     <>
+      <h3>Dashboard</h3>
+      <button className="btn" onClick={handleLogout}>
+        Logout
+      </button>
+      <h4>{user?.name}</h4>
+      <br />
+      <p>{user?.email}</p>
+      <br />
+      <img src={user?.picture} alt={user?.name} />
+      <br />
       <div>
-        <a href="https://vitejs.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+        {posts.map((post, idx) => (
+          <div>
+            <h5>{post?.title}</h5>
+            <p>{post?.body}</p>
+          </div>
+        ))}
       </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
     </>
-  )
+  );
+};
+
+const Login = () => {
+  const handleLogin = async () => {
+    console.log(serverUrl);
+    try {
+      // Gets authentication url from backend server
+      const {
+        data: { url },
+      } = await axios.get(`${serverUrl}/auth/url`);
+      // Navigate to consent screen
+      window.location.assign(url);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+  return (
+    <>
+      <h3>Login to Dashboard</h3>
+      <button className="btn" onClick={() => handleLogin()}>
+        Login
+      </button>
+    </>
+  );
+};
+
+const Callback = () => {
+  const called = useRef(false);
+  const { checkLoginState, loggedIn } = useContext(AuthContext);
+  const navigate = useNavigate();
+  useEffect(() => {
+    (async () => {
+      if (loggedIn === false) {
+        try {
+          if (called.current) return; // prevent rerender caused by StrictMode
+          called.current = true;
+          const res = await axios.get(
+            `${serverUrl}/auth/token${window.location.search}`
+          );
+          console.log("response: ", res);
+          checkLoginState();
+          navigate("/");
+        } catch (err) {
+          console.error(err);
+          navigate("/");
+        }
+      } else if (loggedIn === true) {
+        navigate("/");
+      }
+    })();
+  }, [checkLoginState, loggedIn, navigate]);
+  return <></>;
+};
+
+const Home = () => {
+  const { loggedIn } = useContext(AuthContext);
+  if (!!loggedIn) {
+    return <Dashboard />;
+  } else {
+    return <Login />;
+  }
+};
+
+const router = createBrowserRouter([
+  {
+    path: "/",
+    element: <Home />,
+  },
+  {
+    path: "/auth/callback", // google will redirect here
+    element: <Callback />,
+  },
+]);
+
+function App() {
+  return (
+    <div className="App">
+      <header className="App-header">
+        <AuthContextProvider>
+          <RouterProvider router={router} />
+        </AuthContextProvider>
+      </header>
+    </div>
+  );
 }
 
-export default App
+export default App;
